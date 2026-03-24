@@ -30,7 +30,7 @@ const IssueForm: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingIssue, setLoadingIssue] = useState(false);
-  const [attachment, setAttachment] = useState<{name: string, data: string} | null>(null);
+  const [attachments, setAttachments] = useState<{name: string, data: string}[]>([]);
 
   useEffect(() => {
     const init = async () => {
@@ -90,22 +90,42 @@ const IssueForm: React.FC = () => {
     setIsGenerating(false);
   };
 
+  const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+  const MAX_ATTACHMENTS = 5;
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 1048576) { 
-        alert("File is too large. Please use a smaller image (under 1MB).");
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+
+    const remaining = MAX_ATTACHMENTS - attachments.length;
+    if (remaining <= 0) {
+      alert(`You can upload a maximum of ${MAX_ATTACHMENTS} images.`);
+      e.target.value = '';
+      return;
+    }
+
+    const filesToProcess = files.slice(0, remaining);
+    if (files.length > remaining) {
+      alert(`Only ${remaining} more image(s) can be added. The rest were ignored.`);
+    }
+
+    filesToProcess.forEach(file => {
+      if (file.size > MAX_FILE_SIZE) {
+        alert(`"${file.name}" is too large. Please use images under 5MB.`);
         return;
       }
       const reader = new FileReader();
       reader.onloadend = () => {
-        setAttachment({
-          name: file.name,
-          data: reader.result as string
-        });
+        setAttachments(prev => [...prev, { name: file.name, data: reader.result as string }]);
       };
       reader.readAsDataURL(file);
-    }
+    });
+
+    e.target.value = '';
+  };
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const isFormValid = title.trim() !== '' && 
@@ -140,25 +160,25 @@ const IssueForm: React.FC = () => {
 
         if (isEditing) {
           issuePayload.id = id;
-          if (attachment) {
-            issuePayload.attachments = [{
+          if (attachments.length > 0) {
+            issuePayload.attachments = attachments.map(a => ({
                 id: crypto.randomUUID(),
-                name: attachment.name,
+                name: a.name,
                 type: 'image',
-                data: attachment.data
-            }];
+                data: a.data
+            }));
           }
         } else {
           issuePayload.status = IssueStatus.OPEN;
           issuePayload.reportedBy = user.id;
           issuePayload.reportedByName = user.name;
           issuePayload.comments = [];
-          issuePayload.attachments = attachment ? [{
+          issuePayload.attachments = attachments.map(a => ({
               id: crypto.randomUUID(),
-              name: attachment.name,
+              name: a.name,
               type: 'image',
-              data: attachment.data
-          }] : [];
+              data: a.data
+          }));
         }
 
         await StorageService.saveIssue(issuePayload);
@@ -200,17 +220,17 @@ const IssueForm: React.FC = () => {
 
   return (
     <Layout user={user}>
-      <div className="max-w-4xl mx-auto pb-12">
-        <div className="mb-8">
-            <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+      <div className="max-w-4xl mx-auto pb-8 sm:pb-12">
+        <div className="mb-6 sm:mb-8">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                 {isEditing ? 'Edit Issue' : 'Report New Issue'}
             </h1>
             <p className="text-slate-500 mt-1">Please provide accurate details to help our technical team assist you faster.</p>
         </div>
         
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
           
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 space-y-8 transition-all hover:shadow-md">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 sm:p-6 md:p-8 space-y-6 sm:space-y-8 transition-all hover:shadow-md">
             
             {/* 1. Title */}
             <div className="space-y-2">
@@ -220,7 +240,7 @@ const IssueForm: React.FC = () => {
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Brief summary of the problem"
-                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all font-medium
+                    className={`w-full px-4 py-3 sm:py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all font-medium min-h-[44px]
                     ${showErrors && !title.trim() ? 'border-red-300 ring-red-50 focus:ring-red-100' : 'border-slate-200 ring-blue-50 focus:ring-blue-100 focus:border-blue-500'}`}
                 />
             </div>
@@ -231,7 +251,7 @@ const IssueForm: React.FC = () => {
                 <select
                     value={category}
                     onChange={(e) => handleCategoryChange(e.target.value)}
-                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer
+                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer min-h-[44px]
                     ${showErrors && !category ? 'border-red-300 ring-red-50' : 'border-slate-200 ring-blue-50 focus:border-blue-500'}`}
                 >
                     <option value="">-- Select Category --</option>
@@ -243,13 +263,13 @@ const IssueForm: React.FC = () => {
             {category && (
               <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 animate-fade-in shadow-inner">
                  <LabelWithError label={`Select specific ${category} issue (Sub-category)`} isError={showErrors && !subCategory} />
-                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
+                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 mt-4">
                     {subCategories.map(sub => (
                       <button
                         key={sub}
                         type="button"
                         onClick={() => setSubCategory(sub)}
-                        className={`group flex items-center text-left px-4 py-4 rounded-xl border transition-all duration-200
+                        className={`group flex items-center text-left px-3 sm:px-4 py-3 sm:py-4 rounded-xl border transition-all duration-200 min-h-[44px]
                           ${subCategory === sub 
                             ? 'bg-blue-600 border-blue-600 text-white shadow-lg scale-[1.02]' 
                             : 'bg-white border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50'
@@ -270,13 +290,13 @@ const IssueForm: React.FC = () => {
             )}
 
             {/* 4. Location & Place Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
                 <div>
                     <LabelWithError label="Location (Branch)" isError={showErrors && !location} />
                     <select
                         value={location}
                         onChange={(e) => setLocation(e.target.value)}
-                        className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer
+                        className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer min-h-[44px]
                         ${showErrors && !location ? 'border-red-300 ring-red-50' : 'border-slate-200 ring-blue-50 focus:border-blue-500'}`}
                     >
                         <option value="">-- Select Location --</option>
@@ -290,7 +310,7 @@ const IssueForm: React.FC = () => {
                     <select
                         value={place}
                         onChange={(e) => setPlace(e.target.value)}
-                        className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer
+                        className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer min-h-[44px]
                         ${showErrors && !place ? 'border-red-300 ring-red-50' : 'border-slate-200 ring-blue-50 focus:border-blue-500'}`}
                     >
                         <option value="">-- Select Place --</option>
@@ -305,7 +325,7 @@ const IssueForm: React.FC = () => {
                 <select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
-                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer font-bold
+                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none bg-white text-slate-900 transition-all cursor-pointer font-bold min-h-[44px]
                     ${showErrors && !priority ? 'border-red-300 ring-red-50' : 'border-slate-200 ring-blue-50 focus:border-blue-500'}`}
                 >
                     <option value="">-- Select Priority --</option>
@@ -325,7 +345,7 @@ const IssueForm: React.FC = () => {
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Provide more context here. What happened? Any error codes? When did it start?"
-                    className={`w-full px-4 py-4 border rounded-xl focus:ring-4 outline-none resize-none bg-white text-slate-900 transition-all
+                    className={`w-full px-4 py-3 border rounded-xl focus:ring-4 outline-none resize-none bg-white text-slate-900 transition-all min-h-[130px]
                         ${showErrors && !description.trim() ? 'border-red-300 ring-red-50' : 'border-slate-200 ring-blue-50 focus:border-blue-500'}`}
                 />
                 <button
@@ -346,55 +366,67 @@ const IssueForm: React.FC = () => {
             {/* 7. Attachment */}
             <div>
                 <label className="block text-[13px] font-semibold text-slate-600 mb-2">
-                    {isEditing ? 'New Attachment (Overrides existing)' : 'Add Photo/Screenshot'}
+                    {isEditing ? 'New Attachments (Overrides existing)' : 'Add Photos/Screenshots'} <span className="font-normal text-slate-400">(up to 5 images)</span>
                 </label>
-                {!attachment ? (
-                <div className="border-2 border-dashed border-slate-200 rounded-2xl p-8 flex flex-col items-center justify-center text-slate-500 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer relative bg-slate-50/50">
-                    <input 
-                        type="file" 
-                        accept="image/*"
-                        onChange={handleFileChange}
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+
+                {/* Uploaded previews */}
+                {attachments.length > 0 && (
+                  <div className="space-y-2 mb-3">
+                    {attachments.map((att, index) => (
+                      <div key={index} className="flex items-center justify-between p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                        <div className="flex items-center">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden mr-3 border border-emerald-200">
+                            <img src={att.data} className="w-full h-full object-cover" alt="preview" />
+                          </div>
+                          <span className="text-sm text-emerald-800 font-bold truncate max-w-xs">{att.name}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(index)}
+                          className="text-emerald-600 hover:text-red-500 p-2 transition-colors bg-white rounded-lg"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Upload area — hidden when limit reached */}
+                {attachments.length < MAX_ATTACHMENTS && (
+                  <div className="border-2 border-dashed border-slate-200 rounded-2xl p-6 sm:p-8 flex flex-col items-center justify-center text-slate-500 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer relative bg-slate-50/50 min-h-[140px] sm:min-h-[160px]">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handleFileChange}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                     <div className="p-3 bg-white rounded-full shadow-sm mb-3">
-                        <Upload className="w-6 h-6 text-blue-600" />
+                      <Upload className="w-6 h-6 text-blue-600" />
                     </div>
-                    <span className="text-sm font-medium">Click to upload (Max 1MB)</span>
+                    <span className="text-sm font-medium">
+                      Click to upload ({attachments.length}/{MAX_ATTACHMENTS} added · Max 5MB each)
+                    </span>
                     <span className="text-xs text-slate-400 mt-1">Supports JPG, PNG</span>
-                </div>
-                ) : (
-                <div className="flex items-center justify-between p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-                    <div className="flex items-center">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden mr-3 border border-emerald-200">
-                            <img src={attachment.data} className="w-full h-full object-cover" alt="preview" />
-                        </div>
-                        <span className="text-sm text-emerald-800 font-bold truncate max-w-xs">{attachment.name}</span>
-                    </div>
-                    <button 
-                        type="button" 
-                        onClick={() => setAttachment(null)}
-                        className="text-emerald-600 hover:text-red-500 p-2 transition-colors bg-white rounded-lg"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
-                </div>
+                  </div>
                 )}
             </div>
           </div>
 
           {/* Form Actions */}
-          <div className="pt-6 flex flex-col sm:flex-row justify-end gap-4">
+          <div className="pt-4 sm:pt-6 flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
             <button
               type="button"
               onClick={() => navigate(isEditing ? `/issues/${id}` : '/issues')}
-              className="px-8 py-3 text-slate-600 hover:bg-slate-200 rounded-xl font-bold transition-colors text-center"
+              className="px-4 sm:px-8 py-3 text-slate-600 hover:bg-slate-200 rounded-xl font-bold transition-colors text-center min-h-[44px] flex items-center justify-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting || (showErrors && !isFormValid)}
-              className={`px-10 py-3 text-white rounded-xl font-black shadow-lg transition-all flex items-center justify-center min-w-[180px]
+              className={`px-6 sm:px-10 py-3 text-white rounded-xl font-black shadow-lg transition-all flex items-center justify-center min-h-[44px] w-full sm:w-auto sm:min-w-[180px]
                 ${!isFormValid && showErrors 
                   ? 'bg-slate-400 cursor-not-allowed shadow-none' 
                   : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-200 active:scale-95'
